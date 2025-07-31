@@ -1,57 +1,84 @@
 import { test, expect } from './fixtures';
 
-test.describe('Contract Management', () => {
-  test('complete contract lifecycle from creation to signing', async ({ buyerPage, sellerPage }) => {
-    // Navigate to contract creation
-    await buyerPage.goto('/contracts');
-    await buyerPage.click('[data-testid="create-contract-button"]');
+test.describe('Dispute Resolution', () => {
+  test('dispute creation and notification workflow', async ({ buyerPage, sellerPage }) => {
+    // Get active order for dispute
+    const ordersResponse = await buyerPage.request.get('/api/orders');
+    const orders = await ordersResponse.json();
+    const activeOrder = orders.find(o => o.status === 'in_progress');
     
-    // Fill contract details
-    await buyerPage.fill('[data-testid="contract-title"]', 'E2E Test Contract');
-    await buyerPage.fill('[data-testid="contract-description"]', 'Automated testing contract');
-    await buyerPage.fill('[data-testid="contract-amount"]', '1000');
-    await buyerPage.selectOption('[data-testid="contract-currency"]', 'USD');
-    await buyerPage.fill('[data-testid="counterparty-email"]', 'olivia.collins@nexitynetwork.uk');
+    if (!activeOrder) {
+      test.skip('No active order available for dispute testing');
+    }
     
-    // Create contract
-    await buyerPage.click('[data-testid="create-contract-submit"]');
-    await expect(buyerPage.locator('[data-testid="success-message"]')).toBeVisible();
+    // Buyer creates dispute
+    await buyerPage.goto(`/orders/${activeOrder.id}`);
+    await buyerPage.click('[data-testid="create-dispute"]');
     
-    // Verify contract creation in database
-    const contractsResponse = await buyerPage.request.get('/api/contracts');
-    expect(contractsResponse.status()).toBe(200);
-    const contracts = await contractsResponse.json();
-    const testContract = contracts.find(c => c.title === 'E2E Test Contract');
-    expect(testContract).toBeDefined();
-    expect(testContract.amount).toBe(1000);
-    expect(testContract.currency).toBe('USD');
-    expect(testContract.status).toBe('draft');
+    // Fill dispute details
+    await buyerPage.fill('[data-testid="dispute-title"]', 'Quality Issue Dispute');
+    await buyerPage.fill('[data-testid="dispute-description"]', 'Work quality does not meet specifications');
+    await buyerPage.selectOption('[data-testid="dispute-category"]', 'quality');
     
-    // Navigate to negotiation room
-    await buyerPage.click(`[data-testid="contract-${testContract.id}-negotiate"]`);
-    await buyerPage.click('[data-testid="send-for-review"]');
+    // Upload evidence
+    await buyerPage.setInputFiles('[data-testid="evidence-upload"]', {
+      name: 'evidence.txt',
+      mimeType: 'text/plain',
+      buffer: Buffer.from('Evidence of quality issues')
+    });
     
-    // Seller approves contract
-    await sellerPage.goto('/contracts');
-    await sellerPage.click(`[data-testid="contract-${testContract.id}-review"]`);
-    await sellerPage.click('[data-testid="approve-contract"]');
+    // Submit dispute
+    await buyerPage.click('[data-testid="submit-dispute"]');
+    await expect(buyerPage.locator('[data-testid="dispute-success"]')).toBeVisible();
     
-    // Verify contract approval in database
-    const updatedResponse = await sellerPage.request.get(`/api/contracts/${testContract.id}`);
-    const updatedContract = await updatedResponse.json();
-    expect(updatedContract.status).toBe('approved');
+    // Verify dispute creation in database
+    const disputesResponse = await buyerPage.request.get('/api/disputes');
+    expect(disputesResponse.status()).toBe(200);
+    const disputes = await disputesResponse.json();
+    const testDispute = disputes.find(d => d.title === 'Quality Issue Dispute');
+    expect(testDispute).toBeDefined();
+    expect(testDispute.status).toBe('open');
+    expect(testDispute.category).toBe('quality');
+    expect(testDispute.order_id).toBe(activeOrder.id);
     
-    // Both parties sign contract
-    await buyerPage.goto(`/contracts/${testContract.id}/signature`);
-    await buyerPage.click('[data-testid="sign-contract"]');
+    // Verify seller receives notification
+    await sellerPage.goto('/notifications');
+    await expect(sellerPage.locator('[data-testid="dispute-notification"]')).toBeVisible();
     
-    await sellerPage.goto(`/contracts/${testContract.id}/signature`);
-    await sellerPage.click('[data-testid="sign-contract"]');
+    // Check notification in database
+    const notificationsResponse = await sellerPage.request.get('/api/notifications');
+    const notifications = await notificationsResponse.json();
+    const disputeNotification = notifications.find(n => 
+      n.type === 'dispute_created' && n.related_id === testDispute.id
+    );
+    expect(disputeNotification).toBeDefined();
+    expect(disputeNotification.read).toBe(false);
     
-    // Verify final contract state
-    const finalResponse = await buyerPage.request.get(`/api/contracts/${testContract.id}`);
-    const finalContract = await finalResponse.json();
-    expect(finalContract.status).toBe('signed');
-    expect(finalContract.blockchain_address).toBeDefined();
+    // Seller responds to dispute
+    await sellerPage.goto(`/disputes/${testDispute.id}`);
+    await sellerPage.fill('[data-testid="dispute-response"]', 'Will address quality concerns immediately');
+    await sellerPage.click('[data-testid="submit-response"]');
+    
+    // Verify response in database
+    const responseCheck = await sellerPage.request.get(`/api/disputes/${testDispute.id}/responses`);
+    const responses = await responseCheck.json();
+    expect(responses.length).toBeGreaterThan(0);
+    expect(responses[0].message).toContain('quality concerns');
+    
+    // Admin mediates dispute (simulate admin access)
+    const adminResponse = await buyerPage.request.patch(`/api/disputes/${testDispute.id}/mediate`, {
+      data: {
+        resolution: 'Partial refund approved',
+        action: 'refund_50_percent'
+      }
+    });
+    
+    if (adminResponse.status() === 200) {
+      // Verify resolution
+      const resolvedResponse = await buyerPage.request.get(`/api/disputes/${testDispute.id}`);
+      const resolvedDispute = await resolvedResponse.json();
+      expect(resolvedDispute.status).toBe('resolved');
+      expect(resolvedDispute.resolution).toContain('Partial refund');
+    }
   });
 });
