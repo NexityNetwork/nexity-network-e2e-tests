@@ -1,4 +1,4 @@
-import { test, expect } from './fixtures.ts';
+import { test, expect } from './fixtures';
 
 test.describe('Smart Contract Integration', () => {
   test('blockchain deployment and on-chain recording', async ({ buyerPage, sellerPage }) => {
