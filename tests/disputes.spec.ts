@@ -1,4 +1,4 @@
-import { test, expect } from './fixtures.ts';
+import { test, expect } from './fixtures';
 
 test.describe('Dispute Resolution', () => {
   test('dispute creation and notification workflow', async ({ buyerPage, sellerPage }) => {
