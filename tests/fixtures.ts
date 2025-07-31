@@ -10,12 +10,21 @@ export const test = base.extend<TestFixtures>({
     const context = await browser.newContext();
     const page = await context.newPage();
     
-    // Login as buyer
-    await page.goto('/login');
-    await page.fill('[data-testid="email-input"]', 'catalin@nexitynetwork.org');
-    await page.fill('[data-testid="password-input"]', 'password123');
-    await page.click('[data-testid="login-button"]');
-    await page.waitForURL('/dashboard');
+    // Login as buyer - try signin first, then login
+    try {
+      await page.goto('/signin');
+      await page.fill('[data-testid="email-input"]', 'catalin@nexitynetwork.org');
+      await page.fill('[data-testid="password-input"]', 'password123');
+      await page.click('[data-testid="login-submit"]');
+      await page.waitForURL('/dashboard', { timeout: 10000 });
+    } catch (error) {
+      // Fallback to /login route
+      await page.goto('/login');
+      await page.fill('[data-testid="email-input"]', 'catalin@nexitynetwork.org');
+      await page.fill('[data-testid="password-input"]', 'password123');
+      await page.click('[data-testid="login-submit"]');
+      await page.waitForURL('/dashboard', { timeout: 10000 });
+    }
     
     await use(page);
     await context.close();
@@ -25,12 +34,21 @@ export const test = base.extend<TestFixtures>({
     const context = await browser.newContext();
     const page = await context.newPage();
     
-    // Login as seller
-    await page.goto('/login');
-    await page.fill('[data-testid="email-input"]', 'olivia.collins@nexitynetwork.uk');
-    await page.fill('[data-testid="password-input"]', 'password123');
-    await page.click('[data-testid="login-button"]');
-    await page.waitForURL('/dashboard');
+    // Login as seller - try signin first, then login
+    try {
+      await page.goto('/signin');
+      await page.fill('[data-testid="email-input"]', 'olivia.collins@nexitynetwork.uk');
+      await page.fill('[data-testid="password-input"]', 'password123');
+      await page.click('[data-testid="login-submit"]');
+      await page.waitForURL('/dashboard', { timeout: 10000 });
+    } catch (error) {
+      // Fallback to /login route
+      await page.goto('/login');
+      await page.fill('[data-testid="email-input"]', 'olivia.collins@nexitynetwork.uk');
+      await page.fill('[data-testid="password-input"]', 'password123');
+      await page.click('[data-testid="login-submit"]');
+      await page.waitForURL('/dashboard', { timeout: 10000 });
+    }
     
     await use(page);
     await context.close();
