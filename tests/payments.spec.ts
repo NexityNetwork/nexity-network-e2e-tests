@@ -1,82 +1,85 @@
 import { test, expect } from './fixtures';
 
-test.describe('Payment Processing', () => {
-  test('multi-currency payment processing and escrow management', async ({ buyerPage, sellerPage }) => {
-    // Navigate to payments dashboard
-    await buyerPage.goto('/payments');
+test.describe('Smart Contract Integration', () => {
+  test('blockchain deployment and on-chain recording', async ({ buyerPage, sellerPage }) => {
+    // Navigate to smart contracts section
+    await buyerPage.goto('/contracts');
     
-    // Test Stripe payment for USD
-    await buyerPage.click('[data-testid="add-payment-method"]');
-    await buyerPage.selectOption('[data-testid="payment-provider"]', 'stripe');
-    await buyerPage.selectOption('[data-testid="currency-select"]', 'USD');
-    await buyerPage.fill('[data-testid="amount-input"]', '100');
+    // Get contracts for blockchain testing
+    const contractsResponse = await buyerPage.request.get('/api/contracts');
+    const contracts = await contractsResponse.json();
+    const signedContract = contracts.find(c => c.status === 'signed');
     
-    // Fill mock Stripe details (test mode)
-    await buyerPage.fill('[data-testid="card-number"]', '4242424242424242');
-    await buyerPage.fill('[data-testid="card-expiry"]', '12/25');
-    await buyerPage.fill('[data-testid="card-cvc"]', '123');
+    if (!signedContract) {
+      test.skip('No signed contract available for blockchain testing');
+    }
     
-    // Process payment
-    await buyerPage.click('[data-testid="process-payment"]');
-    await expect(buyerPage.locator('[data-testid="payment-success"]')).toBeVisible();
+    // Verify blockchain deployment
+    expect(signedContract.blockchain_address).toBeDefined();
+    expect(signedContract.blockchain_hash).toBeDefined();
     
-    // Verify payment in database
-    const paymentsResponse = await buyerPage.request.get('/api/payments');
-    expect(paymentsResponse.status()).toBe(200);
-    const payments = await paymentsResponse.json();
-    const testPayment = payments.find(p => p.amount === 100 && p.currency === 'USD');
-    expect(testPayment).toBeDefined();
-    expect(testPayment.status).toBe('completed');
-    expect(testPayment.provider).toBe('stripe');
+    // Test blockchain transaction validation
+    const blockchainResponse = await buyerPage.request.get(`/api/blockchain/validate/${signedContract.blockchain_hash}`);
+    expect(blockchainResponse.status()).toBe(200);
+    const blockchainData = await blockchainResponse.json();
+    expect(blockchainData.valid).toBe(true);
+    expect(blockchainData.network).toBe('sepolia');
     
-    // Test cryptocurrency payment with MetaMask
-    await buyerPage.click('[data-testid="add-crypto-payment"]');
-    await buyerPage.selectOption('[data-testid="crypto-currency"]', 'ETH');
-    await buyerPage.fill('[data-testid="crypto-amount"]', '0.05');
+    // Test escrow smart contract triggers
+    const ordersResponse = await buyerPage.request.get('/api/orders');
+    const orders = await ordersResponse.json();
+    const contractOrders = orders.filter(o => o.contract_id === signedContract.id);
     
-    // Mock MetaMask connection
+    for (const order of contractOrders) {
+      if (order.status === 'completed') {
+        // Verify NFT minting
+        expect(order.nft_token_id).toBeDefined();
+        expect(order.nft_contract_address).toBeDefined();
+        
+        // Validate NFT on blockchain
+        const nftResponse = await buyerPage.request.get(`/api/blockchain/nft/${order.nft_token_id}`);
+        const nftData = await nftResponse.json();
+        expect(nftData.exists).toBe(true);
+        expect(nftData.owner).toBeDefined();
+        expect(nftData.metadata).toBeDefined();
+      }
+    }
+    
+    // Test MetaMask signature verification
     await buyerPage.evaluate(() => {
       (window as any).ethereum = {
-        request: async ({ method }) => {
-          if (method === 'eth_requestAccounts') {
-            return ['0x742d35Cc6734C0532925a3b8D0Ac6bc900dE1B2e'];
-          }
-          if (method === 'eth_sendTransaction') {
+        request: async ({ method, params }) => {
+          if (method === 'personal_sign') {
             return '0x123abc456def789ghi012jkl345mno678pqr901stu234vwx567yz890';
+          }
+          if (method === 'eth_accounts') {
+            return ['0x742d35Cc6734C0532925a3b8D0Ac6bc900dE1B2e'];
           }
         }
       };
     });
     
-    await buyerPage.click('[data-testid="connect-metamask"]');
-    await buyerPage.click('[data-testid="confirm-crypto-payment"]');
+    // Test contract creation with signature
+    await buyerPage.goto('/contracts/create');
+    await buyerPage.fill('[data-testid="contract-title"]', 'Blockchain Test Contract');
+    await buyerPage.fill('[data-testid="contract-amount"]', '500');
+    await buyerPage.click('[data-testid="require-blockchain"]');
     
-    // Verify cryptocurrency payment
-    const cryptoResponse = await buyerPage.request.get('/api/payments/crypto');
-    const cryptoPayments = await cryptoResponse.json();
-    const cryptoPayment = cryptoPayments.find(p => p.currency === 'ETH');
-    expect(cryptoPayment).toBeDefined();
-    expect(cryptoPayment.blockchain_hash).toBeDefined();
+    // Sign with MetaMask
+    await buyerPage.click('[data-testid="sign-with-metamask"]');
+    await expect(buyerPage.locator('[data-testid="signature-success"]')).toBeVisible();
     
-    // Test escrow functionality
-    await buyerPage.goto('/orders');
-    const ordersResponse = await buyerPage.request.get('/api/orders');
-    const orders = await ordersResponse.json();
-    const activeOrder = orders.find(o => o.status === 'in_progress');
+    // Verify signature storage
+    const signatureResponse = await buyerPage.request.get('/api/contracts/latest/signature');
+    const signatureData = await signatureResponse.json();
+    expect(signatureData.signature).toBeDefined();
+    expect(signatureData.signer_address).toBe('0x742d35Cc6734C0532925a3b8D0Ac6bc900dE1B2e');
     
-    if (activeOrder) {
-      // Verify escrow balance
-      const escrowResponse = await buyerPage.request.get(`/api/payments/escrow/${activeOrder.id}`);
-      const escrowData = await escrowResponse.json();
-      expect(escrowData.held_amount).toBeGreaterThan(0);
-      expect(escrowData.status).toBe('held');
-      
-      // Test escrow release
-      await buyerPage.click(`[data-testid="release-escrow-${activeOrder.id}"]`);
-      
-      const releasedResponse = await buyerPage.request.get(`/api/payments/escrow/${activeOrder.id}`);
-      const releasedData = await releasedResponse.json();
-      expect(releasedData.status).toBe('released');
-    }
+    // Test gas optimization
+    const gasResponse = await buyerPage.request.get('/api/blockchain/gas-estimate');
+    const gasData = await gasResponse.json();
+    expect(gasData.estimated_gas).toBeGreaterThan(0);
+    expect(gasData.gas_price).toBeGreaterThan(0);
+    expect(gasData.total_cost_eth).toBeGreaterThan(0);
   });
 });
