@@ -1,4 +1,4 @@
-import { test, expect } from './fixtures';
+import { test, expect } from './fixtures.ts';
 
 test.describe('Order Management', () => {
   test('order creation and milestone completion workflow', async ({ buyerPage, sellerPage }) => {
