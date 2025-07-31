@@ -1,4 +1,4 @@
-import { test, expect } from './fixtures';
+import { test, expect } from './fixtures.ts';
 
 test.describe('Contract Management', () => {
   test('complete contract lifecycle from creation to signing', async ({ buyerPage, sellerPage }) => {
