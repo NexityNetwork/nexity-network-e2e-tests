@@ -1,4 +1,4 @@
-import { test, expect } from './fixtures.ts';
+import { test, expect } from './fixtures';
 
 test.describe('Authentication System', () => {
   test('buyer and seller can login and access dashboard', async ({ buyerPage, sellerPage }) => {
