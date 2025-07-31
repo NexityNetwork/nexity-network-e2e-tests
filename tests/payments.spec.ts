@@ -1,4 +1,4 @@
-import { test, expect } from './fixtures.ts';
+import { test, expect } from './fixtures';
 
 test.describe('Payment Processing', () => {
   test('multi-currency payment processing and escrow management', async ({ buyerPage, sellerPage }) => {
